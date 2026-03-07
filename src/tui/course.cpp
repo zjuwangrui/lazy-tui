@@ -4,6 +4,8 @@
 #include<ftxui/component/screen_interactive.hpp>
 #include<string>
 #include<iostream>
+#include<sstream>
+#include<tuple>
 #include<vector>
 #include<thread>
 
@@ -36,11 +38,119 @@ struct Courseware {
     std::string size;
 };
 
+struct DownloadNotification {
+    std::string title;
+    Color title_color;
+    std::vector<std::string> lines;
+};
+
 std::string trim(const std::string& s) {
     auto start = s.find_first_not_of(" \t\n\r");
     if (start == std::string::npos) return "";
     auto end = s.find_last_not_of(" \t\n\r");
     return s.substr(start, end - start + 1);
+}
+
+DownloadNotification parseDownloadError(const std::string& output) {
+    std::string failed_resource;
+    std::string summary;
+    std::string path;
+
+    std::stringstream ss(output);
+    std::string line;
+
+    while (std::getline(ss, line)) {
+        const auto trimmed = trim(line);
+        if (trimmed.empty()) continue;
+
+        if (trimmed.find("下载失败:") != std::string::npos) {
+            auto content = trim(trimmed.substr(trimmed.find(":") + 1));
+            auto progress_pos = content.find("━");
+            if (progress_pos != std::string::npos) {
+                content = trim(content.substr(0, progress_pos));
+            }
+            failed_resource = content;
+        } else if (trimmed.find("下载完成！") != std::string::npos) {
+            summary = trimmed;
+        } else if (trimmed.find("下载路径:") != std::string::npos) {
+            path = trim(trimmed.substr(trimmed.find(":") + 1));
+        }
+    }
+
+    DownloadNotification notification{
+        "下载失败",
+        Color::Red,
+        {},
+    };
+
+    if (!failed_resource.empty()) {
+        notification.lines.push_back("资源: " + failed_resource);
+    }
+
+    if (!summary.empty()) {
+        notification.lines.push_back("结果: " + summary);
+    }
+
+    if (!path.empty()) {
+        notification.lines.push_back("路径: " + path);
+    }
+
+    if (notification.lines.empty()) {
+        notification.lines.push_back(output);
+    }
+
+    return notification;
+}
+
+DownloadNotification parseDownloadSuccess(const std::string& output) {
+    std::string filename;
+    std::string summary;
+    std::string path;
+
+    std::stringstream ss(output);
+    std::string line;
+
+    while (std::getline(ss, line)) {
+        const auto trimmed = trim(line);
+        if (trimmed.empty()) continue;
+
+        if (trimmed.find("√ 下载:") != std::string::npos || trimmed.find("下载:") != std::string::npos) {
+            auto content = trim(trimmed.substr(trimmed.find(":") + 1));
+            auto progress_pos = content.find("━");
+            if (progress_pos != std::string::npos) {
+                content = trim(content.substr(0, progress_pos));
+            }
+            filename = content;
+        } else if (trimmed.find("下载完成！") != std::string::npos) {
+            summary = trimmed;
+        } else if (trimmed.find("下载路径:") != std::string::npos) {
+            path = trim(trimmed.substr(trimmed.find(":") + 1));
+        }
+    }
+
+    DownloadNotification notification{
+        "下载成功",
+        Color::Green,
+        {},
+    };
+
+    if (!filename.empty()) {
+        notification.lines.push_back("文件: " + filename);
+    }
+
+    if (!summary.empty()) {
+        notification.lines.push_back("结果: " + summary);
+    }
+
+    if (!path.empty()) {
+        notification.lines.push_back("路径: " + path);
+    }
+
+    if (notification.lines.empty()) {
+        notification.lines.push_back(output);
+    }
+
+    return notification;
 }
 
 std::vector<Course> parseCourseTable(const std::string& raw_output) {
@@ -314,12 +424,24 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
     );
 
     static bool subNoti = 0;
-    static std::string inRes;
+    static bool downloading = false;
+    static DownloadNotification download_notification;
 
     static auto showRes = Renderer([&] {
-        return vbox({
-            text(inRes) | center | flex
-        }) | border;
+        if (downloading) {
+            return vbox({
+                spinner(2, 150) | hcenter,
+                text("下载中...") | hcenter,
+            }) | center | border;
+        }
+        Elements lines;
+        lines.push_back(text((download_notification.title_color == Color::Green ? "✔ " : "✘ ") + download_notification.title) |
+                        color(download_notification.title_color) | hcenter);
+        lines.push_back(separator());
+        for (const auto& line : download_notification.lines) {
+            lines.push_back(paragraph(line));
+        }
+        return vbox(std::move(lines)) | center | border;
     });
 
     renderer |= Modal(popupMenuRend, &popupMenuShow);
@@ -335,13 +457,20 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
             }
             if (e == Event::Return || e == Event::Character('l')) {
                 std::thread([&] {
-                    inRes = "下载中......";
+                    downloading = true;
                     subNoti = 1;
                     screen.RequestAnimationFrame();
-                    lazy::run("lazy resource download " + parsedCoursewares[selCourseware].id);
-                    inRes = "下载完毕！";
+
+                    std::string download_output = lazy::run("lazy resource download " + parsedCoursewares[selCourseware].id);
+                    
+                    if (download_output.find("下载失败") != std::string::npos || download_output.find("成功下载 0 个文件") != std::string::npos) {
+                        download_notification = parseDownloadError(download_output);
+                    } else {
+                        download_notification = parseDownloadSuccess(download_output);
+                    }
+                    downloading = false;
                     screen.RequestAnimationFrame();
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    std::this_thread::sleep_for(std::chrono::seconds(3));
                     subNoti = 0;
                     screen.RequestAnimationFrame();
                 }).detach();
@@ -386,7 +515,7 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
                 if (popupSel == 1) {
                     std::thread([&] {
                         std::string id = parsedCourses[sel].id;
-                        inRes = "读取中......";
+                        downloading = true;
                         subNoti = 1;
                         screen.RequestAnimationFrame();
                         auto oridata = lazy::run("lazy course view coursewares " + id + " -A");
@@ -395,6 +524,7 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
                         parsedCoursewares = std::move(data);
                         placeholdersCourseware.assign(parsedCoursewares.size(), "");
                         coursewareShow = 1;
+                        downloading = false;
                         subNoti = 0;
                         screen.RequestAnimationFrame();
                     }).detach();

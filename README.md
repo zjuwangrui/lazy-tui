@@ -47,3 +47,13 @@ make -j
 - [ ] 课程的目录查看
 - [ ] 云盘的管理
 - [ ] 更用户友好的界面
+- [ ] 多文件同时下载
+- [ ] 鼠标的作用，现在似乎不会起作用但是在视图上会干扰
+- [ ] 下载失败没有提示
+  D:\constructing_projects\Learning_at_ZJU_third_client>lazy resource download 5886076
+下载失败: 5886076 o(￣ヘ￣o＃) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0 bytes/100 bytes -:--:--
+下载完成！成功下载 0 个文件，失败 1 个文件。
+下载路径: C:\Users\lenovo\Downloads
+
+下载成功了也显示失败
+靠命令退出不是靠时间
