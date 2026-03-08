@@ -110,6 +110,7 @@ namespace lazy {
         while (fgets(buffer, sizeof(buffer), pipe.fp) != nullptr) {
             result += buffer;
         }
+        logger::log_info("Command output: " + result);
 #ifdef _WIN32
         return gbkToUtf8(result);
 #else

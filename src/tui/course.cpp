@@ -1,4 +1,5 @@
 #include"../clicall/lazycli.hpp"
+#include"../utils/logger.hpp"
 #include<ftxui/dom/elements.hpp>
 #include<ftxui/component/component.hpp>
 #include<ftxui/component/screen_interactive.hpp>
@@ -253,6 +254,7 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
     static std::once_flag flag;
     std::call_once(flag, [&]() {
         std::thread([&]() {
+            logger::log_info("[course] 开始后台加载课程列表");
             // 在后台线程执行耗时操作
             std::string cont = lazy::run("lazy course list -A");
             auto data = parseCourseTable(cont);
@@ -261,6 +263,8 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
             parsedCourses = std::move(data);
             placeholders.assign(parsedCourses.size(), "");
             loading = false;
+
+            logger::log_info("[course] 课程列表加载完成，共 " + std::to_string(parsedCourses.size()) + " 门课程");
 
             // Let the screen reload or sth idk
             screen.PostEvent(Event::Custom);
@@ -418,13 +422,20 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
             }
             if (e == Event::Return || e == Event::Character('l')) {
                 std::thread([&] {
+                    const auto& cw = parsedCoursewares[selCourseware];
+                    logger::log_info("[course] 开始下载资源: id=" + cw.id + " name=" + cw.name);
                     downloading = true;
                     subNoti = 1;
                     screen.RequestAnimationFrame();
 
-                    std::string download_output = lazy::run("lazy resource download " + parsedCoursewares[selCourseware].id);
+                    std::string download_output = lazy::run("lazy resource download " + cw.id);
                     
                     download_notification = parseDownloadResult(download_output);
+                    if (download_notification.title_color == Color::Green) {
+                        logger::log_info("[course] 资源下载成功: " + cw.name);
+                    } else {
+                        logger::log_error("[course] 资源下载失败: " + cw.name + " | 输出: " + download_output);
+                    }
                     downloading = false;
                     screen.RequestAnimationFrame();
                     std::this_thread::sleep_for(std::chrono::seconds(8));
@@ -448,10 +459,12 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
                 if (popupSel == 3) {
                     std::thread([&] {
                         std::string id = parsedCourses[sel].id;
+                        logger::log_info("[course] 查看签到记录: 课程id=" + id);
                         popCont = "读取中......";
                         popupShow = 1;
                         screen.RequestAnimationFrame();
                         auto data = lazy::run("lazy course view rollcalls " + id + " -A");
+                        logger::log_info("[course] 签到记录加载完成: 课程id=" + id);
                         popCont = std::move(data);
                         screen.RequestAnimationFrame();
                     }).detach();
@@ -460,10 +473,12 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
                 if (popupSel == 2) {
                     std::thread([&] {
                         std::string id = parsedCourses[sel].id;
+                        logger::log_info("[course] 查看成员列表: 课程id=" + id);
                         popCont = "读取中......";
                         popupShow = 1;
                         screen.RequestAnimationFrame();
                         auto data = lazy::run("lazy course view members " + id);
+                        logger::log_info("[course] 成员列表加载完成: 课程id=" + id);
                         popCont = std::move(data);
                         screen.RequestAnimationFrame();
                     }).detach();
@@ -472,6 +487,7 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
                 if (popupSel == 1) {
                     std::thread([&] {
                         std::string id = parsedCourses[sel].id;
+                        logger::log_info("[course] 加载课件列表: 课程id=" + id);
                         downloading = true;
                         subNoti = 1;
                         screen.RequestAnimationFrame();
@@ -480,6 +496,7 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
                         selCourseware = 0;
                         parsedCoursewares = std::move(data);
                         placeholdersCourseware.assign(parsedCoursewares.size(), "");
+                        logger::log_info("[course] 课件列表加载完成: 课程id=" + id + "，共 " + std::to_string(parsedCoursewares.size()) + " 个资源");
                         coursewareShow = 1;
                         downloading = false;
                         subNoti = 0;
@@ -499,10 +516,12 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
             return false;
         }
         if (e == Event::Character('q') || e == Event::Character('h')) {
+            logger::log_info("[course] 用户返回主菜单");
             cur = 0;
             return true;
         }
         if (e == Event::Return || e == Event::Character('l')) {
+            logger::log_info("[course] 打开课程操作菜单: 课程id=" + parsedCourses[sel].id + " name=" + parsedCourses[sel].name);
             popupMenuShow = 1;
             return true;
         }
