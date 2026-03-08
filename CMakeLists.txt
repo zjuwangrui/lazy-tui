@@ -18,6 +18,7 @@ endif()
 add_executable(lazytui
     src/main.cpp
     src/clicall/lazycli.cpp
+    src/utils/logger.cpp
     src/tui/mainMenu.cpp 
     src/tui/assignment.cpp
     src/tui/resource.cpp

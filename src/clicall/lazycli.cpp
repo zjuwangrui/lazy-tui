@@ -1,3 +1,4 @@
+#include "utils/logger.hpp"
 #include<string>
 
 namespace lazy {
@@ -98,18 +99,21 @@ namespace lazy {
     };
 
     std::string run(const std::string &cmd) {
-        std::string res;
-        // auto pipe = popen(cmd.c_str(), "r");
+        logger::log_info("Executing command: " + cmd);
         SafeProcess pipe(cmd);
-        if (!pipe.fp) return res;
-
+        if (!pipe.fp) {
+            logger::log_error("Failed to run command: " + cmd);
+            return "Failed to run command";
+        }
+        std::string result = "";
         char buffer[256];
-        while (fgets(buffer, sizeof(buffer), pipe.fp) != nullptr) { res += buffer; }
-
+        while (fgets(buffer, sizeof(buffer), pipe.fp) != nullptr) {
+            result += buffer;
+        }
 #ifdef _WIN32
-        res = gbkToUtf8(res);
+        return gbkToUtf8(result);
+#else
+        return result;
 #endif
-
-        return res;
     }
 }
