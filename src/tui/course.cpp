@@ -57,7 +57,8 @@ std::string trim(const std::string& s) {
 
 DownloadNotification parseDownloadResult(const std::string& output) {
     bool is_error = (output.find("下载失败") != std::string::npos ||
-                     output.find("成功下载 0 个文件") != std::string::npos) &&
+                     output.find("成功下载 0 个文件") != std::string::npos)||
+                     output.find("登录失败") != std::string::npos &&
                     output.find("失败 0 个文件") == std::string::npos;
 
     DownloadNotification notification;
@@ -388,11 +389,11 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
         })}
     );
 
-    static bool subNoti = 0;
+    static bool loadNotiShow = 0;
     static bool downloading = false;
     static DownloadNotification download_notification;
 
-    static auto showRes = Renderer([&] {
+    static auto loadResRend = Renderer([&] {
         if (downloading) {
             return vbox({
                 spinner(2, 150) | hcenter,
@@ -406,15 +407,28 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
         for (const auto& line : download_notification.lines) {
             lines.push_back(paragraph(line));
         }
+        lines.push_back(separator());
+        lines.push_back(text(" 按 [q] 或 [h] 关闭 ") | hcenter | dim);
         return vbox(std::move(lines)) | center | border;
     });
+    static auto loadRes = Make<AlwaysFocusable>(Container::Vertical({
+        loadResRend,
+    }));
 
     renderer |= Modal(popupMenuRend, &popupMenuShow);
     renderer |= Modal(popup, &popupShow);
     renderer |= Modal(rendererCoursewares, &coursewareShow);
-    renderer |= Modal(showRes, &subNoti);
+    renderer |= Modal(loadRes, &loadNotiShow);
 
     return renderer | CatchEvent([&](Event e) {
+        if (loadNotiShow && !downloading) {
+            if (e == Event::Character('q') || e == Event::Character('h')) {
+                logger::log_info("[course] 用户关闭下载结果通知");
+                loadNotiShow = 0;
+                return true;
+            }
+            return false;
+        }
         if (coursewareShow) {
             if (e == Event::Character('q') || e == Event::Character('h')) {
                 coursewareShow = 0;
@@ -425,7 +439,7 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
                     const auto& cw = parsedCoursewares[selCourseware];
                     logger::log_info("[course] 开始下载资源: id=" + cw.id + " name=" + cw.name);
                     downloading = true;
-                    subNoti = 1;
+                    loadNotiShow = 1;
                     screen.RequestAnimationFrame();
 
                     std::string download_output = lazy::run("lazy resource download " + cw.id);
@@ -437,9 +451,6 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
                         logger::log_error("[course] 资源下载失败: " + cw.name + " | 输出: " + download_output);
                     }
                     downloading = false;
-                    screen.RequestAnimationFrame();
-                    std::this_thread::sleep_for(std::chrono::seconds(8));
-                    subNoti = 0;
                     screen.RequestAnimationFrame();
                 }).detach();
                 return true;
@@ -489,7 +500,7 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
                         std::string id = parsedCourses[sel].id;
                         logger::log_info("[course] 加载课件列表: 课程id=" + id);
                         downloading = true;
-                        subNoti = 1;
+                        loadNotiShow = 1;
                         screen.RequestAnimationFrame();
                         auto oridata = lazy::run("lazy course view coursewares " + id + " -A");
                         auto data = parseCoursewares(oridata);
@@ -499,7 +510,7 @@ Component course(ftxui::ScreenInteractive &screen, int &cur) {
                         logger::log_info("[course] 课件列表加载完成: 课程id=" + id + "，共 " + std::to_string(parsedCoursewares.size()) + " 个资源");
                         coursewareShow = 1;
                         downloading = false;
-                        subNoti = 0;
+                        loadNotiShow = 0;
                         screen.RequestAnimationFrame();
                     }).detach();
                     return true;
